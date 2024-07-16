@@ -1,0 +1,176 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters": {
+        "ShouldCreateGlueAssetsBucket": {
+        "Type": "String",
+        "AllowedValues": [
+            "TRUE",
+            "FALSE"
+        ],
+        "MinLength": 1,
+        "Description": "Check if the aws-glue-assets-{CurrentAccountId}-{CurrentRegion} S3 bucket exists. If it DOES NOT exist, select TRUE. If it exist, then select FALSE."
+        }
+    },
+    "Conditions": {
+        "CreateS3Bucket": {
+            "Fn::Equals": [
+                {
+                    "Ref": "ShouldCreateGlueAssetsBucket"
+                },
+                "TRUE"
+            ]
+        }
+    },
+    "Resources": {
+        "OneTimeGlueCopyScript": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": "OneTimeGlueCopyScript",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "glue.amazonaws.com"
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Policies": [
+                    {
+                        "PolicyName": "QuickSight-AdminConsole-CopyScript",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Sid": "VisualEditor0",
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetObjectAcl",
+                                        "s3:GetObject",
+                                        "s3:ListBucket"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:s3:::admin-console-cfn-dataprepare-code/glue/scripts/glue-quicksight-admin-console-user-data-access-info.py",
+                                        "arn:aws:s3:::admin-console-cfn-dataprepare-code/glue/scripts/glue-quicksight-admin-console-dataset-dashboard-info.py",
+                                        "arn:aws:s3:::admin-console-cfn-dataprepare-code/glue/scripts/copy-admin-console-glue-scripts.py",
+                                        "arn:aws:s3:::admin-console-cfn-dataprepare-code"
+                                    ]
+                                },
+                                {
+                                    "Sid": "VisualEditor1",
+                                    "Effect": "Allow",
+                                    "Action": "s3:ListBucket",
+                                    "Resource": "arn:aws:s3:::aws-glue-assets-*"
+                                },
+                                {
+                                    "Sid": "VisualEditor2",
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:PutObject",
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": "arn:aws:s3:::aws-glue-assets-*/scripts/*"
+                                },
+                                {
+                                    "Sid": "VisualEditor3",
+                                    "Effect": "Allow",
+                                    "Action": "cloudwatch:PutMetricData",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Sid": "VisualEditor4",
+                                    "Effect": "Allow",
+                                    "Action": "logs:CreateLogGroup",
+                                    "Resource": "arn:aws:logs:*:868602922830:log-group:*"
+                                },
+                                {
+                                    "Sid": "VisualEditor5",
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:CreateLogStream",
+                                        "logs:PutLogEvents"
+                                    ],
+                                    "Resource": "arn:aws:logs:*:868602922830:log-group:*:log-stream:*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "glueassets": {
+            "Type": "AWS::S3::Bucket",
+            "Condition": "CreateS3Bucket",
+            "Properties": {
+                "AccessControl": "Private",
+                "PublicAccessBlockConfiguration": {
+                    "BlockPublicAcls": true,
+                    "BlockPublicPolicy": true,
+                    "IgnorePublicAcls": true,
+                    "RestrictPublicBuckets": true
+                },
+                "BucketName": {
+                    "Fn::Sub": "aws-glue-assets-${AWS::AccountId}-${AWS::Region}"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "494a8dba-26e5-4efa-93ea-d49a84c99390"
+                }
+            }
+        },
+        "copyadminconsolegluescripts": {
+            "Type": "AWS::Glue::Job",
+            "Properties": {
+                "Command": {
+                    "Name": "pythonshell",
+                    "PythonVersion": "3.9",
+                    "ScriptLocation": "s3://admin-console-cfn-dataprepare-code/glue/scripts/copy-admin-console-glue-scripts.py"
+                },
+                "DefaultArguments": {
+                    "--AWS_REGION": {
+                        "Fn::Sub": "${AWS::Region}"
+                    },
+                    "--AWS_ACCOUNT_ID":{
+                        "Fn::Sub": "${AWS::AccountId}"
+                    }
+                },
+                "GlueVersion": "3.0",
+                "ExecutionProperty": {
+                    "MaxConcurrentRuns" : 1
+                },
+                "MaxCapacity": 1,
+                "MaxRetries": 0,
+                "Name": "copyadminconsolegluescripts",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "OneTimeGlueCopyScript",
+                        "Arn"
+                    ]
+                },
+                "Timeout": 10,                
+            },
+            "DependsOn": [
+                "OneTimeGlueCopyScript"
+            ]
+        },
+        "copyadminconsolegluescriptsschedule": {
+            "Type": "AWS::Glue::Trigger",
+            "Properties": {
+                "Type": "ON_DEMAND",
+                "Description": "Glue Trigger to run copyadminconsolegluescripts glue job On-Demand. START THIS TRIGGER IF YOU ARE DEPLOYING ADMIN CONSOLE DASHBOARD FOR THE FIRST TIME OR IF YOU INTEND TO REPLACE THE EXISTING ADMIN CONSOLE PYTHON SCRIPTS WITH THE ORIGINAL ONE.",
+                "Actions": [
+                    {
+                        "JobName": "copyadminconsolegluescripts"
+                    }
+                ],
+                "Name": "copyadminconsolegluescriptsschedule"
+            }
+        }
+    }
+}

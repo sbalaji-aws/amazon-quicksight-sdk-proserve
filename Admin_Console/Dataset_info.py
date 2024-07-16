@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import botocore
 
 
+
 def default_botocore_config() -> botocore.config.Config:
     """Botocore configuration."""
     retries_config: Dict[str, Union[str, int]] = {
@@ -52,14 +53,11 @@ def lambda_handler(event, context):
     local_file_name2 = 'datsets_ingestion.csv'
     local_file_name3 = 'data_dictionary.csv'
     path = os.path.join(tmpdir, local_file_name)
-    # print(path)
 
     path2 = os.path.join(tmpdir, local_file_name2)
-    # print(path2)
-
+    
     path3 = os.path.join(tmpdir, local_file_name3)
-    # print(path3)
-
+    
     access = []
 
     data_dictionary = []
@@ -72,53 +70,61 @@ def lambda_handler(event, context):
         response = describe_dashboard(account_id, dashboardid, lambda_aws_region)
         Dashboard = response['Dashboard']
         Name = Dashboard['Name']
-        # print(Name)
-        Sourceid = Dashboard['Version']['SourceEntityArn'].split("/")
-        # print(Sourceid)
-        Sourceid = Sourceid[-1]
-        # print(Sourceid)
-        try:
-            Source = describe_analysis(account_id, Sourceid, lambda_aws_region)
-            SourceName = Source['Analysis']['Name']
-            # print(SourceName)
-        except Exception as e:
-            if str(e).find('is not found'):
-                pass
+        
+        if 'SourceEntityArn' in Dashboard['Version']:
+            SourceEntityArn = Dashboard['Version']['SourceEntityArn']
+            SourceType = SourceEntityArn.split(":")[-1].split("/")[0]
+            if SourceType == 'analysis':
+                Sourceid = SourceEntityArn.split("/")[-1]
+                try:
+                    Source = describe_analysis(account_id, Sourceid, lambda_aws_region)
+                    SourceName = Source['Analysis']['Name']
+                except botocore.exceptions.ClientError as error:
+                    if error.response['Error']['Code'] == 'ResourceNotFoundException':
+                        print("Analysis ID: " + Sourceid + " does not exist in your account. So, not able to retrieve the Source ID and Source Name.")
+                        Sourceid = 'N/A'
+                        SourceName = 'N/A'
+                    else:
+                        raise error                
             else:
-                raise e
+                print("Source Type is not analysis. So, not able to retrieve the Source ID and Source Name.")
+                Sourceid = 'N/A'
+                SourceName = 'N/A'
+        else:
+            print("SourceEntityArn does not exists in Dashboard: " + Name +". So, not able to retrieve the Source ID and Source Name.")
+            Sourceid = 'N/A'
+            SourceName = 'N/A'
+
 
         DataSetArns = Dashboard['Version']['DataSetArns']
-        # print(DataSetArns)
         for ds in DataSetArns:
             dsid = ds.split("/")
             dsid = dsid[-1]
-            # print(dsid)
             try:
                 dataset = describe_data_set(account_id, dsid, lambda_aws_region)
                 dsname = dataset['DataSet']['Name']
-                print(dsname)
+                print("Dataset: " +dsname)
+                print(dataset)
                 LastUpdatedTime = dataset['DataSet']['LastUpdatedTime']
-                print(LastUpdatedTime)
                 PhysicalTableMap = dataset['DataSet']['PhysicalTableMap']
-                print(PhysicalTableMap)
                 for sql in PhysicalTableMap:
-                    # print(sql)
                     sql = PhysicalTableMap[sql]
-                    print(sql)
                     if 'RelationalTable' in sql:
                         DataSourceArn = sql['RelationalTable']['DataSourceArn']
                         DataSourceid = DataSourceArn.split("/")
                         DataSourceid = DataSourceid[-1]
                         datasource = describe_data_source(account_id, DataSourceid, lambda_aws_region)
                         datasourcename = datasource['DataSource']['Name']
-                        Catalog = sql['RelationalTable']['Catalog']
+                        if 'Catalog' in sql['RelationalTable']:
+                            Catalog = sql['RelationalTable']['Catalog']
+                        else:
+                            Catalog = 'N/A'
                         Schema = sql['RelationalTable']['Schema']
                         sqlName = sql['RelationalTable']['Name']
 
                         access.append(
                             [lambda_aws_region, Name, dashboardid, SourceName, Sourceid, dsname, dsid, LastUpdatedTime,
                              datasourcename, DataSourceid, Catalog, Schema, sqlName])
-                        print(access)
 
                     if 'CustomSql' in sql:
                         DataSourceArn = sql['CustomSql']['DataSourceArn']
@@ -132,17 +138,14 @@ def lambda_handler(event, context):
                         access.append(
                             [lambda_aws_region, Name, dashboardid, SourceName, Sourceid, dsname, dsid, LastUpdatedTime,
                              datasourcename, DataSourceid, 'N/A', sqlName, SqlQuery])
-                    print(access)
 
             except Exception as e:
-                if str(e).find('flat file'):
+                if (str(e).find('flat file') != -1):
                     pass
                 else:
                     raise e
 
 
-
-    print(access)
     with open(path, 'w', newline='') as outfile:
         writer = csv.writer(outfile, delimiter='|')
         for line in access:
@@ -170,12 +173,11 @@ def lambda_handler(event, context):
                     [datasetname, dsid, columnname, columntype, columndesc]
                 )
         except Exception as e:
-            if str(e).find('data set type is not supported'):
+            if (str(e).find('data set type is not supported') != -1):
                 pass
             else:
                 raise e
 
-    print(data_dictionary)
     with open(path3, 'w', newline='') as outfile:
         writer = csv.writer(outfile, delimiter=',')
         for line in data_dictionary:

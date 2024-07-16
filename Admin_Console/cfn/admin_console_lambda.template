@@ -89,9 +89,8 @@
                         }
                     }
                 },
-
                 "Handler": "data_prepare.lambda_handler",
-                "Runtime": "python3.7",
+                "Runtime": "python3.12",
                 "FunctionName": "data_prepare",
                 "MemorySize": 512,
                 "Timeout": 900,
@@ -127,7 +126,7 @@
                     }
                 },
                 "Handler": "Dataset_info.lambda_handler",
-                "Runtime": "python3.7",
+                "Runtime": "python3.12",
                 "FunctionName": "dataset_info",
                 "MemorySize": 512,
                 "Timeout": 900,

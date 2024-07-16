@@ -5,7 +5,7 @@ import csv
 import io
 import os
 import tempfile
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import botocore
 
@@ -66,7 +66,6 @@ def lambda_handler(event, context):
     local_file_name = 'group_membership.csv'
     local_file_name2 = 'object_access.csv'
     path = os.path.join(tmpdir, local_file_name)
-    print(path)
 
     lists = []
     access = []
@@ -74,7 +73,6 @@ def lambda_handler(event, context):
     for ns in namespaces:
         ns = ns['Name']
         users = list_users(account_id, aws_region, ns)
-
         for user in users:
             if user['UserName'] == 'N/A':
                 continue
@@ -85,9 +83,8 @@ def lambda_handler(event, context):
                 else:
                     for group in groups:
                         lists.append([account_id, ns, group['GroupName'], user['UserName'], user['Email'], user['Role'], user['IdentityType']])
-            except:
-                #print('Exception when try to pull group info for user: ', user['UserName'])
-                continue
+            except Exception as e:
+                print(e)
 
     print(len(lists))
     #print(lists)
@@ -112,11 +109,16 @@ def lambda_handler(event, context):
             principal = principal['Principal'].split("/")
             ptype = principal[0].split(":")
             ptype = ptype[-1]
-            additional_info = principal[1]
+            additional_info = principal[-2]
             if len(principal)==4:
+                # This will handle user
                 principal = principal[2]+'/'+principal[3]
             elif len(principal)==3:
+                # This will handle group
                 principal = principal[2]
+            else:
+                # This will handle namespace
+                principal = principal[1]
 
             access.append(
                 [account_id, lambda_aws_region, 'dashboard', dashboard['Name'], dashboardid, ptype, principal, additional_info, actions])
@@ -140,6 +142,8 @@ def lambda_handler(event, context):
                     principal = principal[2]+'/'+principal[3]
                 elif len(principal)==3:
                     principal = principal[2]
+                else:
+                    principal = principal[1]
 
                 access.append(
                     [account_id, lambda_aws_region, 'dataset', dataset['Name'], datasetid, ptype, principal, additional_info, actions])
@@ -172,7 +176,7 @@ def lambda_handler(event, context):
                         access.append([account_id, lambda_aws_region, 'data_source', datasource['Name'], datasourceid, ptype, principal,
                                        additional_info, actions])
                 except Exception as e:
-                    pass
+                    print(e)
 
     analyses = list_analyses(account_id, lambda_aws_region)
 
@@ -192,13 +196,15 @@ def lambda_handler(event, context):
                     principal = principal[2]+'/'+principal[3]
                 elif len(principal)==3:
                     principal = principal[2]
+                else:
+                    principal = principal[1]
 
                 access.append(
                     [account_id, lambda_aws_region, 'analysis', analysis['Name'], analysisid, ptype, principal, additional_info, actions])
 
     themes = list_themes(account_id, lambda_aws_region)
     for theme in themes:
-        if theme['ThemeId'] not in ['SEASIDE', 'CLASSIC', 'MIDNIGHT']:
+        if theme['ThemeId'] not in ['SEASIDE', 'CLASSIC', 'MIDNIGHT', 'RAINIER']:
             themeid = theme['ThemeId']
             response = describe_theme_permissions(account_id, themeid, lambda_aws_region)
             permissions = response['Permissions']
@@ -212,6 +218,8 @@ def lambda_handler(event, context):
                     principal = principal[2]+'/'+principal[3]
                 elif len(principal)==3:
                     principal = principal[2]
+                else:
+                    principal = principal[1]
 
                 access.append(
                     [account_id, lambda_aws_region, 'theme', theme['Name'], themeid, ptype, principal, additional_info,

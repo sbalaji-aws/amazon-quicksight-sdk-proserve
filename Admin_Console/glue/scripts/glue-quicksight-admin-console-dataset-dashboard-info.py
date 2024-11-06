@@ -257,7 +257,7 @@ if __name__ == "__main__":
                     else:
                         raise error
             else:
-                print("Source Type is not analysis. So, not able to retrieve the Source ID and Source Name.")
+                print("Source Type is not in analysis. So, not able to retrieve the Source ID and Source Name.")
                 Sourceid = 'N/A'
                 SourceName = 'N/A'
         else:
@@ -271,6 +271,12 @@ if __name__ == "__main__":
             dsid = dsid[-1]
             try:
                 dataset = describe_data_set(account_id, dsid, glue_aws_region)
+
+            except botocore.exceptions.ClientError as error:
+                if error.response['Error']['Code'] == 'ResourceNotFoundException':
+                    print(f"Dataset ID: " + dsid + " not found/does not exist in your account. Skipping this dataset.")
+                    continue                
+
                 dsname = dataset['DataSet']['Name']
                 LastUpdatedTime = dataset['DataSet']['LastUpdatedTime']
                 PhysicalTableMap = dataset['DataSet']['PhysicalTableMap']
@@ -280,8 +286,16 @@ if __name__ == "__main__":
                         DataSourceArn = sql['RelationalTable']['DataSourceArn']
                         DataSourceid = DataSourceArn.split("/")
                         DataSourceid = DataSourceid[-1]
-                        datasource = describe_data_source(account_id, DataSourceid, glue_aws_region)
-                        datasourcename = datasource['DataSource']['Name']
+                        try:
+                            datasource = describe_data_source(account_id, DataSourceid, glue_aws_region)
+                            datasourcename = datasource['DataSource']['Name']
+                        except botocore.exceptions.ClientError as error:
+                            if error.response['Error']['Code'] == 'ResourceNotFoundException':
+                                print(f"Data source ID: " + DataSourceid + " not found/does not exist in your account. Setting datasourcename and DataSourceid to 'N/A'.")
+                                DataSourceid = 'N/A'
+                                datasourcename = 'N/A'
+                            else:
+                                raise error
                         if 'Catalog' in sql['RelationalTable']:
                             Catalog = sql['RelationalTable']['Catalog']
                         else:
@@ -297,8 +311,16 @@ if __name__ == "__main__":
                         DataSourceArn = sql['CustomSql']['DataSourceArn']
                         DataSourceid = DataSourceArn.split("/")
                         DataSourceid = DataSourceid[-1]
-                        datasource = describe_data_source(account_id, DataSourceid, glue_aws_region)
-                        datasourcename = datasource['DataSource']['Name']
+                        try:
+                            datasource = describe_data_source(account_id, DataSourceid, glue_aws_region)
+                            datasourcename = datasource['DataSource']['Name']
+                        except botocore.exceptions.ClientError as error:
+                            if error.response['Error']['Code'] == 'ResourceNotFoundException':
+                                print(f"Data source ID: " + DataSourceid + " not found/does not exist in your account. Setting datasourcename and DataSourceid to 'N/A'.")
+                                DataSourceid = 'N/A'
+                                datasourcename = 'N/A'
+                            else:
+                                raise error                        
                         SqlQuery = sql['CustomSql']['SqlQuery'].replace("\n", "").replace("\r", "").replace("\t", "")
                         sqlName = sql['CustomSql']['Name']
 
@@ -339,6 +361,11 @@ if __name__ == "__main__":
                 data_dictionary.append(
                     [datasetname, dsid, columnname, columntype, columndesc]
                 )
+        except botocore.exceptions.ClientError as error:
+            if error.response['Error']['Code'] == 'ResourceNotFoundException':
+                print(f"Dataset ID: " + dsid + " not found/does not exist in your account. Skipping this dataset.")
+                continue
+        
         except Exception as e:
             if (str(e).find('data set type is not supported') != -1):
                 pass

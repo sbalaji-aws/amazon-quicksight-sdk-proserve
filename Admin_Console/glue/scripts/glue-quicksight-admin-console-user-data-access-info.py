@@ -250,8 +250,16 @@ if __name__ == "__main__":
     access = []
     namespaces = list_namespaces(account_id, aws_region)
     for ns in namespaces:
-        ns = ns['Name']
-        users = list_users(account_id, aws_region, ns)
+        try:
+            ns = ns['Name']
+            users = list_users(account_id, aws_region, ns)
+        
+        except botocore.exceptions.ClientError as error:
+            if error.response['Error']['Code'] == 'ResourceNotFoundException':
+                print(f"Account " + account_id + " is not signed up with QuickSight with namespace " + ns + " . Skipping this namespace.")
+                continue
+        except Exception as e:
+            print(e)
 
         for user in users:
             if user['UserName'] == 'N/A':
@@ -384,7 +392,7 @@ if __name__ == "__main__":
 
     themes = list_themes(account_id, glue_aws_region)
     for theme in themes:
-        if theme['ThemeId'] not in ['SEASIDE', 'CLASSIC', 'MIDNIGHT', 'RAINIER']:
+        if theme['ThemeId'] not in ['SEASIDE', 'CLASSIC', 'MIDNIGHT', 'RAINIER', 'AQUASCAPE']:
             themeid = theme['ThemeId']
             response = describe_theme_permissions(account_id, themeid, glue_aws_region)
             permissions = response['Permissions']
@@ -414,5 +422,3 @@ if __name__ == "__main__":
     # upload file from tmp to s3 key
 
     bucket.upload_file(path, key2)
-
-
